@@ -8,7 +8,8 @@ from aiogram.types import Message
 
 from src.bot.permissions import NEW_USER, USER_PASSED
 from src.database import get_session
-from src.database.chat_member_state import update_chat_member_state, ChatMemberStateUpdate
+from src.database.crud import update_chat_member_state
+from src.database.schemas import ChatMemberStateUpdate
 
 
 async def safe_delete_message(bot: Bot, chat_id: int, message_id: int) -> None:

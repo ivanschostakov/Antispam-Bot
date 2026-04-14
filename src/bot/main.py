@@ -6,7 +6,7 @@ from config import ANTISPAM_BOT_TOKEN, MOSCOW_TZ
 from src.bot.handlers.chat_shared import pass_user
 from src.bot.handlers import *
 from src.database import get_session, init_db
-from src.database.chat_member_state import get_states_with_active_mute
+from src.database.crud import get_states_with_active_mute
 from config import MESSAGES_LOGS_DIR
 
 bot = Bot(ANTISPAM_BOT_TOKEN)

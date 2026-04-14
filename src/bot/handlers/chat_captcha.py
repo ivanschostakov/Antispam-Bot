@@ -8,13 +8,14 @@ from aiogram import Bot
 
 from config import MOSCOW_TZ, CAPTCHA_MAX_ATTEMPTS, POLL_TIMEOUT_BUFFER, POLL_TIMEOUT_SECONDS
 from src.database import get_session
-from src.database.chat_member_state import (
-    ChatMemberStateUpdate,
+from src.database.crud import (
+    get_moderated_chat,
     get_chat_member_state,
+    get_random_poll_for_chat,
     update_chat_member_state,
     upsert_chat_member_state,
 )
-from src.database.poll import get_random_poll_for_chat
+from src.database.schemas import ChatMemberStateUpdate
 from src.bot.handlers.chat_helpers import far_future, is_permanently_banned, build_chat_member_state_create
 from src.bot.handlers.chat_shared import send_ephemeral_message, safe_ban_user, safe_delete_message
 
@@ -141,6 +142,19 @@ async def start_captcha(bot: Bot, chat_id: int, user_id: int, thread_id: Optiona
                 thread_id=thread_id,
             )
             return
+
+        moderated_chat = await get_moderated_chat(session, chat_id)
+        greeting = None
+        if moderated_chat and moderated_chat.greetings_message:
+            greeting = moderated_chat.greetings_message.strip()
+
+        if greeting:
+            await send_ephemeral_message(
+                bot,
+                chat_id,
+                greeting,
+                thread_id=thread_id,
+            )
 
         poll_payload = await get_random_poll_for_chat(session, chat_id)
         if poll_payload is None:

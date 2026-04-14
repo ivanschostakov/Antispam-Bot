@@ -7,12 +7,9 @@ from aiogram.enums import MessageEntityType
 from aiogram.types import Message
 
 from src.image import extract_text_from_image
-from src.database.blocked_links import extract_base_domain, normalize_blocked_link
-from src.database.chat_member_state import (
-    ChatMemberStateCreate,
-    ChatMemberStateUpdate,
-    update_chat_member_state,
-)
+from src.database.crud import update_chat_member_state
+from src.database.schemas import ChatMemberStateCreate, ChatMemberStateUpdate
+from src.database.utils import extract_base_domain, normalize_allowed_link
 
 PERMANENT_RESTRICTION_DAYS = 365 * 100
 PERMANENT_BAN_THRESHOLD_DAYS = 365 * 10
@@ -88,14 +85,14 @@ def resolve_spam_mute_delta(times_muted: int) -> Optional[timedelta]:
     return None
 
 
-def extract_entity_domains(message: Message) -> set[str]:
+def extract_entity_links(message: Message) -> set[str]:
     domains: set[str] = set()
     for entity in (message.entities or []) + (message.caption_entities or []):
         if entity.type != MessageEntityType.TEXT_LINK or not entity.url:
             continue
-        blocked_target = normalize_blocked_link(entity.url)
-        if blocked_target:
-            domains.add(blocked_target)
+        allowed_target = normalize_allowed_link(entity.url)
+        if allowed_target:
+            domains.add(allowed_target)
         entity_domain = extract_base_domain(entity.url)
         if entity_domain:
             domains.add(entity_domain)

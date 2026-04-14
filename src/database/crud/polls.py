@@ -3,7 +3,7 @@ import random
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database.poll.model import PollAnswer, PollQuestion
+from src.database.models import PollAnswer, PollQuestion
 
 
 def _unique_answers(correct_answer: str, wrong_answers: list[str]) -> list[str]:

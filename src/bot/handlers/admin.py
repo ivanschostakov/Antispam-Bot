@@ -8,7 +8,7 @@ from aiogram.enums import ChatType
 from aiogram.filters import Command
 from aiogram.types import Message, BufferedInputFile
 
-from config import MOSCOW_TZ, ELIXIR_CHAT_ID
+from config import MOSCOW_TZ
 from src.bot.handlers.chat_helpers import build_chat_member_state_create
 from src.bot.handlers.chat_shared import answer_ephemeral, safe_unrestrict, safe_restrict, pass_user
 from src.bot.permissions import NEW_USER
@@ -16,25 +16,26 @@ from src.image import extract_text_from_image
 from src.test_classifier import predict_spam_proba, probability_to_label
 from src.helpers import _notify_user
 from src.database import get_session
-from src.database.chat_member_state import (
-    ChatMemberStateUpdate,
+from src.database.crud import (
+    add_allowed_link,
+    add_moderated_chat,
+    create_poll_question,
+    delete_poll_question,
+    get_allowed_links,
     get_chat_member_state,
+    get_moderated_chat,
+    is_chat_moderated,
+    list_chat_poll_questions,
+    list_default_poll_questions,
+    list_moderated_chat_ids,
+    remove_allowed_link,
+    remove_moderated_chat,
+    set_greetings_message,
     update_chat_member_state,
     upsert_chat_member_state,
 )
-from src.database.blocked_links import add_blocked_link, remove_blocked_link, get_blocked_links, normalize_blocked_link
-from src.database.moderated_chat import (
-    add_moderated_chat,
-    is_chat_moderated,
-    list_moderated_chat_ids,
-    remove_moderated_chat,
-)
-from src.database.poll import (
-    create_poll_question,
-    delete_poll_question,
-    list_chat_poll_questions,
-    list_default_poll_questions,
-)
+from src.database.schemas import ChatMemberStateUpdate
+from src.database.utils import normalize_allowed_link
 
 router = Router(name="admin")
 
@@ -65,8 +66,6 @@ async def ADMIN_OR_PRIVATE_ADMIN_FILTER(message: Message, bot) -> bool:
 
     async with get_session() as session:
         chat_ids = await list_moderated_chat_ids(session)
-    if not chat_ids and ELIXIR_CHAT_ID is not None:
-        chat_ids = [ELIXIR_CHAT_ID]
 
     for chat_id in chat_ids:
         if await _is_admin_or_creator(bot, chat_id, message.from_user.id):
@@ -157,6 +156,36 @@ async def handle_chat_list(message: Message):
 
     lines = "\n".join(f"- <code>{chat_id}</code>" for chat_id in chat_ids)
     return await answer_ephemeral(message, f"<b>Модерируемые чаты:</b>\n{lines}")
+
+
+@router.message(Command("chat_greeting"))
+async def handle_chat_greeting(message: Message):
+    chat_id = await _require_moderated_chat_context(message)
+    if chat_id is None:
+        return None
+
+    payload = (message.text or "").strip().removeprefix("/chat_greeting").strip()
+    async with get_session() as session:
+        if not payload:
+            chat = await get_moderated_chat(session, chat_id)
+            current = (chat.greetings_message or "").strip() if chat else ""
+            if not current:
+                return await answer_ephemeral(
+                    message,
+                    "Приветствие не задано.\n"
+                    "Установить: <code>/chat_greeting Добро пожаловать! Пройдите проверку.</code>",
+                )
+            return await answer_ephemeral(
+                message,
+                f"<b>Текущее приветствие:</b>\n{current}",
+            )
+
+        if payload.lower() in {"none", "null", "off", "clear", "reset", "-"}:
+            await set_greetings_message(session, chat_id, None)
+            return await answer_ephemeral(message, "Приветствие очищено.")
+
+        await set_greetings_message(session, chat_id, payload)
+        return await answer_ephemeral(message, "Приветствие сохранено.")
 
 
 @router.message(Command("poll_add"))
@@ -251,60 +280,75 @@ async def handle_poll_list(message: Message):
     return await message.answer_document(file, caption=f"Всего вопросов: {len(questions)}")
 
 
+@router.message(Command("allow_link"))
 @router.message(Command("block_link"))
-async def handle_block_link(message: Message):
+async def handle_allow_link(message: Message):
+    chat_id = await _require_moderated_chat_context(message)
+    if chat_id is None:
+        return None
+
     parts = (message.text or "").strip().split(maxsplit=1)
     raw_link = parts[1].strip() if len(parts) > 1 else ""
     if not raw_link:
         return await answer_ephemeral(
             message,
-            "<b>Ошибка команды:</b> указывайте ссылку, которую нужно заблокировать.\n\n"
-            "<b>Пример:</b> <code>/block_link https://spam.example.com/promo</code>",
+            "<b>Ошибка команды:</b> указывайте ссылку, которую нужно разрешить.\n\n"
+            "<b>Пример:</b> <code>/allow_link https://example.com/path</code>",
         )
 
-    blocked_value = normalize_blocked_link(raw_link)
-    if not blocked_value:
+    allowed_value = normalize_allowed_link(raw_link)
+    if not allowed_value:
         return await answer_ephemeral(message, "<b>Ошибка команды:</b> не удалось распознать ссылку или домен.")
 
     async with get_session() as session:
-        added = await add_blocked_link(session, blocked_value)
-    label = "Ссылка" if blocked_value.startswith("t.me/") else "Домен"
+        added = await add_allowed_link(session, chat_id, allowed_value)
+    label = "Ссылка" if allowed_value.startswith("t.me/") else "Домен"
     if added:
-        return await answer_ephemeral(message, f"{label} <code>{blocked_value}</code> добавлен в блок-лист.")
-    return await answer_ephemeral(message, f"{label} <code>{blocked_value}</code> уже находится в блок-листе.")
+        return await answer_ephemeral(message, f"{label} <code>{allowed_value}</code> добавлен в allow-лист этого чата.")
+    return await answer_ephemeral(message, f"{label} <code>{allowed_value}</code> уже есть в allow-листе этого чата.")
 
 
+@router.message(Command("unallow_link"))
 @router.message(Command("unblock_link"))
-async def handle_unblock_link(message: Message):
+async def handle_unallow_link(message: Message):
+    chat_id = await _require_moderated_chat_context(message)
+    if chat_id is None:
+        return None
+
     parts = (message.text or "").strip().split(maxsplit=1)
     raw_link = parts[1].strip() if len(parts) > 1 else ""
     if not raw_link:
         return await answer_ephemeral(
             message,
-            "<b>Ошибка команды:</b> указывайте ссылку, которую нужно разблокировать.\n\n"
-            "<b>Пример:</b> <code>/unblock_link https://spam.example.com/promo</code>",
+            "<b>Ошибка команды:</b> указывайте ссылку, которую нужно убрать из allow-листа.\n\n"
+            "<b>Пример:</b> <code>/unallow_link example.com</code>",
         )
 
-    blocked_value = normalize_blocked_link(raw_link)
-    if not blocked_value:
+    allowed_value = normalize_allowed_link(raw_link)
+    if not allowed_value:
         return await answer_ephemeral(message, "<b>Ошибка команды:</b> не удалось распознать ссылку или домен.")
 
     async with get_session() as session:
-        removed = await remove_blocked_link(session, blocked_value)
-    label = "Ссылка" if blocked_value.startswith("t.me/") else "Домен"
+        removed = await remove_allowed_link(session, chat_id, allowed_value)
+    label = "Ссылка" if allowed_value.startswith("t.me/") else "Домен"
     if removed:
-        return await answer_ephemeral(message, f"{label} <code>{blocked_value}</code> удален из блок-листа.")
-    return await answer_ephemeral(message, f"{label} <code>{blocked_value}</code> не найден в блок-листе.")
+        return await answer_ephemeral(message, f"{label} <code>{allowed_value}</code> удалён из allow-листа этого чата.")
+    return await answer_ephemeral(message, f"{label} <code>{allowed_value}</code> не найден в allow-листе этого чата.")
 
 
+@router.message(Command("allowed_links"))
 @router.message(Command("links"))
-async def handle_links(message: Message):
+async def handle_allowed_links(message: Message):
+    chat_id = await _require_moderated_chat_context(message)
+    if chat_id is None:
+        return None
+
     async with get_session() as session:
-        links = await get_blocked_links(session)
+        links = await get_allowed_links(session, chat_id)
     lines = sorted(links)
-    body = "\n".join(lines) if lines else "Список заблокированных ссылок пуст."
-    file = BufferedInputFile(body.encode("utf-8"), filename="blocked_links.txt")
-    return await message.answer_document(file, caption=f"Заблокированных ссылок/доменов: {len(lines)}")
+    body = "\n".join(lines) if lines else "Allow-лист этого чата пуст. Любые ссылки будут запрещены."
+    file = BufferedInputFile(body.encode("utf-8"), filename=f"allowed_links_{chat_id}.txt")
+    return await message.answer_document(file, caption=f"Разрешённых ссылок/доменов: {len(lines)}")
 
 
 @router.message(Command("spam"))

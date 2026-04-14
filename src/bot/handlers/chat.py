@@ -1,4 +1,6 @@
-from datetime import datetime
+import asyncio
+
+from datetime import datetime, timedelta
 
 from aiogram import Router, Bot
 from aiogram.filters import ChatMemberUpdatedFilter, JOIN_TRANSITION
@@ -8,17 +10,32 @@ from config import MOSCOW_TZ, CAPTCHA_MAX_ATTEMPTS
 from src.helpers import append_message_stats_to_csv, CHAT_ADMIN_FILTER
 from src.test_classifier import predict_spam_proba
 from src.database import get_session
-from src.database.chat_member_state import (
-    ChatMemberStateUpdate,
+from src.database.crud import (
+    get_allowed_links,
     get_chat_member_state,
     get_state_by_active_poll,
+    is_chat_moderated,
     update_chat_member_state,
     upsert_chat_member_state,
 )
-from src.database.moderated_chat import is_chat_moderated
-from src.bot.handlers.chat_helpers import far_future, build_chat_member_state_create, extract_message_text, is_command_message
-from src.bot.handlers.chat_shared import send_ephemeral_message, safe_ban_user, safe_delete_message
+from src.database.schemas import ChatMemberStateUpdate
+from src.database.utils import extract_allowed_targets_from_text
+from src.bot.handlers.chat_helpers import (
+    far_future,
+    build_chat_member_state_create,
+    extract_entity_links,
+    extract_message_text,
+    is_command_message,
+)
+from src.bot.handlers.chat_shared import (
+    pass_user,
+    safe_ban_user,
+    safe_delete_message,
+    safe_restrict,
+    send_ephemeral_message,
+)
 from src.bot.handlers.chat_captcha import start_captcha
+from src.bot.permissions import NEW_USER
 
 router = Router(name="chat")
 
@@ -180,8 +197,12 @@ async def handle_chat_message(message: Message):
         return None
 
     chat_id = message.chat.id
-    trusted_user = await CHAT_ADMIN_FILTER(message, message.bot)
+    is_admin = await CHAT_ADMIN_FILTER(message, message.bot)
+    trusted_user = is_admin
     passed_poll = True
+    mute_for_disallowed_link = False
+    mute_until = None
+    disallowed_links: list[str] = []
 
     async with get_session() as session:
         if not await is_chat_moderated(session, chat_id):
@@ -207,7 +228,25 @@ async def handle_chat_message(message: Message):
 
         trusted_user = trusted_user or bool(state.whitelist)
         passed_poll = trusted_user or bool(state.passed_poll)
-        if passed_poll:
+        if passed_poll and not is_admin:
+            detected_links = extract_allowed_targets_from_text(text) | extract_entity_links(message)
+            if detected_links:
+                allowed_links = await get_allowed_links(session, chat_id)
+                disallowed_links = sorted(target for target in detected_links if target not in allowed_links)
+                if disallowed_links:
+                    mute_until = datetime.now(tz=MOSCOW_TZ) + timedelta(minutes=5)
+                    await update_chat_member_state(
+                        session,
+                        chat_id,
+                        user.id,
+                        ChatMemberStateUpdate(
+                            muted_until=mute_until,
+                            times_muted=(state.times_muted or 0) + 1,
+                        ),
+                    )
+                    mute_for_disallowed_link = True
+
+        if passed_poll and not mute_for_disallowed_link:
             new_messages_sent = (state.messages_sent or 0) + 1
             await update_chat_member_state(
                 session,
@@ -223,6 +262,27 @@ async def handle_chat_message(message: Message):
     if not passed_poll:
         await safe_delete_message(message.bot, message.chat.id, message.message_id)
         await start_captcha(message.bot, message.chat.id, user.id, message.message_thread_id)
+        return None
+
+    if mute_for_disallowed_link:
+        await safe_delete_message(message.bot, message.chat.id, message.message_id)
+        if mute_until is not None:
+            await safe_restrict(message.bot, chat_id, user.id, NEW_USER, until_date=mute_until)
+            asyncio.create_task(pass_user(chat_id, user.id, message.bot, 5 * 60))
+
+        preview = ", ".join(disallowed_links[:5])
+        if len(disallowed_links) > 5:
+            preview += ", ..."
+        await send_ephemeral_message(
+            message.bot,
+            chat_id,
+            (
+                f"{user.mention_html()}, отправка ссылок запрещена, кроме разрешённых для этого чата.\n"
+                f"Обнаружено: <code>{preview}</code>\n"
+                "Вы ограничены на 5 минут."
+            ),
+            thread_id=message.message_thread_id,
+        )
         return None
 
     proba_spam = await predict_spam_proba(text)

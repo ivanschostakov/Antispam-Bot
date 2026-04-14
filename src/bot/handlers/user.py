@@ -6,13 +6,13 @@ from config import REPORTS_CHANNEL_ID
 from src.bot.handlers.chat_helpers import build_chat_member_state_create
 from src.bot.handlers.chat_shared import answer_ephemeral
 from src.database import get_session
-from src.database.chat_member_state import (
-    ChatMemberStateUpdate,
+from src.database.crud import (
     get_chat_member_state,
+    is_chat_moderated,
     update_chat_member_state,
     upsert_chat_member_state,
 )
-from src.database.moderated_chat import is_chat_moderated
+from src.database.schemas import ChatMemberStateUpdate
 
 router = Router(name="user")
 

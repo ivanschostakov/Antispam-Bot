@@ -7,8 +7,6 @@ Create Date: 2026-04-14 13:20:00.000000
 """
 
 from __future__ import annotations
-
-import os
 from typing import Sequence, Union
 
 from alembic import op
@@ -44,40 +42,6 @@ DEFAULT_POLL_QUESTIONS: list[tuple[str, str, list[str]]] = [
     ("Где растут яблоки?", "На дереве", ["Под водой", "В песке", "В холодильнике сами по себе"]),
     ("Куда человек надевает перчатки?", "На руки", ["На ноги", "На голову", "На уши"]),
 ]
-
-
-def _parse_moderated_chat_ids() -> list[int]:
-    raw_list = os.getenv("MODERATED_CHAT_IDS", "")
-    out: list[int] = []
-
-    for chunk in raw_list.split(","):
-        value = chunk.strip()
-        if not value:
-            continue
-        out.append(int(value))
-
-    if not out:
-        legacy = os.getenv("ELIXIR_CHAT_ID")
-        if legacy and legacy.strip():
-            out.append(int(legacy.strip()))
-
-    deduped = sorted(set(out))
-    return deduped
-
-
-def _seed_moderated_chats() -> None:
-    bind = op.get_bind()
-    for chat_id in _parse_moderated_chat_ids():
-        bind.execute(
-            sa.text(
-                """
-                INSERT INTO moderated_chats (id)
-                VALUES (:chat_id)
-                ON CONFLICT (id) DO NOTHING
-                """
-            ),
-            {"chat_id": chat_id},
-        )
 
 
 def _seed_default_poll_questions() -> None:
@@ -206,7 +170,6 @@ def upgrade() -> None:
     if op.get_context().is_offline_mode():
         return
 
-    _seed_moderated_chats()
     _seed_default_poll_questions()
 
 

@@ -54,7 +54,7 @@ def extract_base_domain(value: str) -> Optional[str]:
     return ".".join(labels[-2:])
 
 
-def normalize_blocked_link(value: str) -> Optional[str]:
+def normalize_allowed_link(value: str) -> Optional[str]:
     candidate = value.strip()
     if not candidate:
         return None
@@ -72,7 +72,7 @@ def normalize_blocked_link(value: str) -> Optional[str]:
     return extract_base_domain(candidate)
 
 
-def extract_blocked_targets_from_text(text: str) -> set[str]:
+def extract_allowed_targets_from_text(text: str) -> set[str]:
     if not text:
         return set()
 
@@ -80,11 +80,11 @@ def extract_blocked_targets_from_text(text: str) -> set[str]:
     for pattern in (_URL_RE, _BARE_TELEGRAM_LINK_RE, _BARE_DOMAIN_RE):
         for match in pattern.finditer(text):
             candidate = match.group(0).strip(" \n\r\t<>[](){}\"'.,!?;:")
-            blocked_target = normalize_blocked_link(candidate)
-            if not blocked_target:
+            allowed_target = normalize_allowed_link(candidate)
+            if not allowed_target:
                 continue
 
-            targets.add(blocked_target)
+            targets.add(allowed_target)
             base_domain = extract_base_domain(candidate)
             if base_domain:
                 targets.add(base_domain)
