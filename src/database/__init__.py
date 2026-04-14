@@ -3,7 +3,7 @@ import json
 from contextlib import asynccontextmanager
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
 from config import ASYNC_DATABASE_URL
 
@@ -50,7 +50,8 @@ class BaseModelMixin:
         return json.dumps(self.to_dict(), default=str)
 
 
-Base = declarative_base(cls=BaseModelMixin)
+class Base(DeclarativeBase, BaseModelMixin):
+    pass
 
 
 async def init_db() -> None:

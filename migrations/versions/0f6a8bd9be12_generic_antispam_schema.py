@@ -167,7 +167,9 @@ def upgrade() -> None:
         unique=False,
     )
 
-    if op.get_context().is_offline_mode():
+    from alembic import context
+
+    if context.is_offline_mode():
         return
 
     _seed_default_poll_questions()

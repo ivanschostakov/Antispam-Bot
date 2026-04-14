@@ -3,6 +3,7 @@ import logging
 
 from datetime import datetime
 from typing import Optional
+
 from aiogram import Bot
 from aiogram.types import Message
 
@@ -56,5 +57,4 @@ async def safe_ban_user(bot: Bot, chat_id: int, user_id: int, *, until_date: Opt
 async def safe_unrestrict(bot: Bot, chat_id: int, user_id: int) -> bool: return await safe_restrict(bot, chat_id, user_id, USER_PASSED)
 async def pass_user(chat_id: int, user_id: int, _bot: Bot, timer: Optional[float] = 24 * 60 * 60):
     await asyncio.sleep(timer)
-    async with get_session() as session:
-        await update_chat_member_state(session, chat_id, user_id, ChatMemberStateUpdate(muted_until=None))
+    async with get_session() as session: await update_chat_member_state(session, chat_id, user_id, ChatMemberStateUpdate(muted_until=None))

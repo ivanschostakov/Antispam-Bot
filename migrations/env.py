@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from config import ASYNC_DATABASE_URL
 from src.database import Base
-from src.database.models import AllowedLink, ChatMemberState, ModeratedChat, PollAnswer, PollQuestion
+from src.database.models import AllowedLink, ChatMemberState, ModeratedChat, PollQuestion
 
 config = context.config
 if config.config_file_name is not None: fileConfig(config.config_file_name)
