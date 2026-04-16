@@ -16,4 +16,11 @@ def poll_reset_state(**overrides) -> ChatMemberStateUpdate:
 
 
 def reset_after_unmute_state() -> ChatMemberStateUpdate:
-    return poll_reset_state(muted_until=None, banned_until=None, passed_poll=True, poll_attempts=0)
+    return poll_reset_state(
+        muted_until=None,
+        banned_until=None,
+        passed_poll=True,
+        poll_attempts=0,
+        poll_question_order=None,
+        poll_question_index=0,
+    )

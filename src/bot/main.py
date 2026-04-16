@@ -14,7 +14,7 @@ from config import MESSAGES_LOGS_DIR
 
 bot = Bot(ANTISPAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
-dp.include_routers(private_admin_router, group_admin_router, group_user_router)
+dp.include_routers(private_user_router, private_admin_router, group_admin_router, group_user_router)
 
 async def restore_mutes():
     now = datetime.now(tz=MOSCOW_TZ)

@@ -66,6 +66,11 @@ async def list_effective_poll_questions_for_chat(db: AsyncSession, chat_id: int)
     return chat_specific if chat_specific else await list_default_poll_questions(db)
 
 
+async def get_poll_question_by_id(db: AsyncSession, question_id: int) -> PollQuestion | None:
+    result = await db.execute(select(PollQuestion).where(PollQuestion.id == question_id))
+    return result.scalars().first()
+
+
 async def get_random_poll_for_chat(db: AsyncSession, chat_id: int) -> PollQuestion | None:
     question_ids_result = await db.execute(select(PollQuestion.id).where(PollQuestion.chat_id == chat_id))
     question_ids = list(question_ids_result.scalars().all())

@@ -24,9 +24,18 @@ async def delete_later(bot: Bot, chat_id: int, message_id: int, delay: int = 31)
     except Exception as e: logging.getLogger("main").warning(f"Couldnt delete message with id {message_id} in chat {chat_id}: {e.__class__.__name__}")
 
 
-async def send_ephemeral_message(bot: Bot, chat_id: int, text: str, *, thread_id: Optional[int] = None, parse_mode: str = "HTML"):
+async def send_ephemeral_message(
+    bot: Bot,
+    chat_id: int,
+    text: str,
+    *,
+    thread_id: Optional[int] = None,
+    parse_mode: str = "HTML",
+    reply_markup=None,
+):
     kwargs = {"parse_mode": parse_mode}
     if thread_id is not None: kwargs["message_thread_id"] = thread_id
+    if reply_markup is not None: kwargs["reply_markup"] = reply_markup
     msg = await bot.send_message(chat_id, text, **kwargs)
     asyncio.create_task(delete_later(bot, chat_id, msg.message_id, 31))
     return msg

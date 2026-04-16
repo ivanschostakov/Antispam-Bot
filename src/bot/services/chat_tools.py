@@ -29,7 +29,7 @@ def build_chat_member_state_create(chat_id: int, user_id: int, full_name: str, u
         chat_id=chat_id, user_id=user_id, full_name=full_name, username=username, passed_poll=passed_poll, whitelist=False,
         muted_until=None, times_muted=0, banned_until=None, times_banned=0, messages_sent=messages_sent, times_reported=0,
         accused_spam=False, last_accused_text=None, poll_attempts=0, poll_active=False, poll_message_id=None, poll_chat_id=None,
-        poll_thread_id=None, poll_id=None, poll_correct_option_id=None, poll_started_at=None,
+        poll_thread_id=None, poll_id=None, poll_correct_option_id=None, poll_started_at=None, poll_question_order=None, poll_question_index=0,
     )
 
 

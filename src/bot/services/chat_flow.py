@@ -12,6 +12,7 @@ from src.database.crud import (
     add_moderated_chat,
     get_allowed_links,
     get_chat_member_state,
+    get_moderated_chat,
     get_state_by_active_poll,
     is_chat_moderated,
     update_chat_member_state,
@@ -20,7 +21,7 @@ from src.database.crud import (
 from src.database.schemas import ChatMemberStateUpdate
 from src.bot.services.state_updates import poll_reset_state
 from src.database.utils import extract_allowed_targets_from_text
-from src.bot.services.captcha_service import start_captcha
+from src.bot.services.captcha_service import send_join_greeting, start_captcha, start_deep_captcha
 from src.bot.services.chat_tools import (
     build_chat_member_state_create,
     extract_entity_links,
@@ -31,13 +32,30 @@ from src.bot.services.telegram_tools import pass_user, safe_ban_user, safe_delet
 from src.bot.permissions import NEW_USER
 
 
+def _parse_question_order(raw: str | None) -> list[int]:
+    if not raw:
+        return []
+    result: list[int] = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            result.append(int(item))
+        except ValueError:
+            continue
+    return result
+
+
 async def on_bot_status_changed(event: ChatMemberUpdated):
     chat_type, old_status, new_status = event.chat.type, event.old_chat_member.status, event.new_chat_member.status
-    if chat_type not in {"group", "supergroup"} or new_status not in {"administrator", "creator"}: return None
+    if chat_type not in {"group", "supergroup"} or new_status not in {"administrator", "creator"}:
+        return None
 
     member = event.new_chat_member
     has_rights = new_status == "creator" or (getattr(member, "can_delete_messages", False) and getattr(member, "can_restrict_members", False))
-    if not has_rights: return None
+    if not has_rights:
+        return None
 
     async with get_session() as session:
         added = await add_moderated_chat(session, event.chat.id)
@@ -54,21 +72,48 @@ async def on_bot_status_changed(event: ChatMemberUpdated):
 
 async def on_new_member(event: ChatMemberUpdated):
     user = event.new_chat_member.user
-    if user.is_bot: return None
+    if user.is_bot:
+        return None
 
     chat_id = event.chat.id
     async with get_session() as session:
-        if not await is_chat_moderated(session, chat_id): return None
+        moderated_chat = await get_moderated_chat(session, chat_id)
+        if moderated_chat is None:
+            return None
 
         state = await get_chat_member_state(session, chat_id, user.id)
         if state is None:
             await upsert_chat_member_state(session, build_chat_member_state_create(chat_id, user.id, full_name=user.full_name or "", username=user.username, passed_poll=False, messages_sent=0))
-            return None
+        else:
+            await update_chat_member_state(
+                session,
+                chat_id,
+                user.id,
+                ChatMemberStateUpdate(
+                    full_name=user.full_name or "",
+                    username=user.username,
+                    passed_poll=False,
+                    poll_attempts=0,
+                    poll_active=False,
+                    poll_message_id=None,
+                    poll_chat_id=None,
+                    poll_thread_id=None,
+                    poll_id=None,
+                    poll_correct_option_id=None,
+                    poll_started_at=None,
+                    poll_question_order=None,
+                    poll_question_index=0,
+                ),
+            )
 
-        await update_chat_member_state(session, chat_id, user.id, ChatMemberStateUpdate(
-            full_name=user.full_name or "", username=user.username, passed_poll=False, poll_attempts=0, poll_active=False,
-            poll_message_id=None, poll_chat_id=None, poll_thread_id=None, poll_id=None, poll_correct_option_id=None, poll_started_at=None,
-        ))
+    await send_join_greeting(
+        event.bot,
+        chat_id,
+        user,
+        user_full_name=user.full_name or "",
+        greeting_text=moderated_chat.greetings_message if moderated_chat else None,
+        thread_id=22,
+    )
     return None
 
 
@@ -79,25 +124,85 @@ async def on_poll_answer(answer: PollAnswer, bot: Bot):
 
     async with get_session() as session:
         state = await get_state_by_active_poll(session, user_id=user_id, poll_id=poll_id)
-        if not state or state.passed_poll: return None
+        if not state or state.passed_poll:
+            return None
 
         chat_id, msg_id, thread_id = state.chat_id, state.poll_message_id, state.poll_thread_id
-        if msg_id: await safe_delete_message(bot, chat_id, msg_id)
+        delivery_chat_id = state.poll_chat_id or chat_id
+        if msg_id:
+            await safe_delete_message(bot, delivery_chat_id, msg_id)
 
+        is_deep_flow = bool((state.poll_question_order or "").strip())
         correct_id = state.poll_correct_option_id
         if chosen is not None and correct_id is not None and chosen == correct_id:
-            await update_chat_member_state(session, chat_id, user_id, poll_reset_state(passed_poll=True, poll_attempts=state.poll_attempts))
+            if is_deep_flow:
+                order = _parse_question_order(state.poll_question_order)
+                next_index = (state.poll_question_index or 0) + 1
+                if order and next_index < len(order):
+                    await update_chat_member_state(
+                        session,
+                        chat_id,
+                        user_id,
+                        poll_reset_state(
+                            poll_attempts=state.poll_attempts,
+                            poll_question_order=state.poll_question_order,
+                            poll_question_index=next_index,
+                        ),
+                    )
+                    await send_ephemeral_message(bot, delivery_chat_id, "Ответ верный. Следующий вопрос.")
+                    await start_deep_captcha(bot, chat_id, user_id, delivery_chat_id=delivery_chat_id)
+                    return None
+
+                await update_chat_member_state(
+                    session,
+                    chat_id,
+                    user_id,
+                    poll_reset_state(passed_poll=True, poll_attempts=state.poll_attempts, poll_question_order=None, poll_question_index=0),
+                )
+                await send_ephemeral_message(bot, delivery_chat_id, "Проверка пройдена. Теперь вы можете отправлять сообщения в чат.")
+                await send_ephemeral_message(bot, chat_id, f"{answer.user.mention_html()}, проверка пройдена. Теперь вы можете отправлять сообщения в чат.")
+                return None
+
+            await update_chat_member_state(session, chat_id, user_id, poll_reset_state(passed_poll=True, poll_attempts=state.poll_attempts, poll_question_order=None, poll_question_index=0))
             await send_ephemeral_message(bot, chat_id, f"{answer.user.mention_html()}, проверка пройдена.\nТеперь вы можете отправлять сообщения в чат.", thread_id=thread_id)
             return None
 
         attempts = (state.poll_attempts or 0) + 1
         if attempts >= CAPTCHA_MAX_ATTEMPTS:
-            await update_chat_member_state(session, chat_id, user_id, poll_reset_state(poll_attempts=attempts, muted_until=far_future(now), banned_until=None, times_banned=(state.times_banned or 0) + 1))
+            await update_chat_member_state(
+                session,
+                chat_id,
+                user_id,
+                poll_reset_state(
+                    poll_attempts=attempts,
+                    muted_until=far_future(now),
+                    banned_until=None,
+                    times_banned=(state.times_banned or 0) + 1,
+                    poll_question_order=None,
+                    poll_question_index=0,
+                ),
+            )
             await safe_ban_user(bot, chat_id, user_id)
-            await send_ephemeral_message(bot, chat_id, f"{answer.user.mention_html()}, проверка не пройдена.\nКоличество попыток исчерпано. Права на отправку сообщений ограничены до решения администратора.", thread_id=thread_id)
+            if is_deep_flow:
+                await send_ephemeral_message(bot, chat_id, f"{answer.user.mention_html()}, проверка не пройдена.\nКоличество попыток исчерпано. Права на отправку сообщений ограничены до решения администратора.")
+                await send_ephemeral_message(bot, delivery_chat_id, "Проверка не пройдена. Количество попыток исчерпано.")
+            else:
+                await send_ephemeral_message(bot, chat_id, f"{answer.user.mention_html()}, проверка не пройдена.\nКоличество попыток исчерпано. Права на отправку сообщений ограничены до решения администратора.", thread_id=thread_id)
             return None
 
-        await update_chat_member_state(session, chat_id, user_id, poll_reset_state(poll_attempts=attempts))
+        if is_deep_flow:
+            await update_chat_member_state(
+                session,
+                chat_id,
+                user_id,
+                poll_reset_state(poll_attempts=attempts, poll_question_order=state.poll_question_order, poll_question_index=state.poll_question_index),
+            )
+            left = CAPTCHA_MAX_ATTEMPTS - attempts
+            await send_ephemeral_message(bot, delivery_chat_id, f"Ответ неверный. Осталось попыток: {left}. Попробуйте снова.")
+            await start_deep_captcha(bot, chat_id, user_id, delivery_chat_id=delivery_chat_id)
+            return None
+
+        await update_chat_member_state(session, chat_id, user_id, poll_reset_state(poll_attempts=attempts, poll_question_order=None, poll_question_index=0))
         left = CAPTCHA_MAX_ATTEMPTS - attempts
         await send_ephemeral_message(bot, chat_id, f"{answer.user.mention_html()}, ответ неверный.\nОсталось попыток: {left}. Для новой попытки отправьте любое сообщение в чат.", thread_id=thread_id)
     return None
@@ -105,23 +210,27 @@ async def on_poll_answer(answer: PollAnswer, bot: Bot):
 
 async def on_chat_message(message: Message):
     text = await extract_message_text(message)
-    if not text: return None
+    if not text:
+        return None
     user = message.from_user
-    if not user: return None
+    if not user:
+        return None
 
     chat_id = message.chat.id
     is_admin, trusted_user, passed_poll = await CHAT_ADMIN_FILTER(message, message.bot), False, True
     mute_for_disallowed_link, mute_until, disallowed_links = False, None, []
 
     async with get_session() as session:
-        if not await is_chat_moderated(session, chat_id): return None
+        if not await is_chat_moderated(session, chat_id):
+            return None
 
         state = await get_chat_member_state(session, chat_id, user.id)
         if state is None:
             await upsert_chat_member_state(session, build_chat_member_state_create(chat_id, user.id, full_name=user.full_name or "", username=user.username, passed_poll=is_admin, messages_sent=0))
             state = await get_chat_member_state(session, chat_id, user.id)
 
-        if state is None: return None
+        if state is None:
+            return None
 
         trusted_user, passed_poll = is_admin or bool(state.whitelist), (is_admin or bool(state.whitelist)) or bool(state.passed_poll)
         if passed_poll and not is_admin:
