@@ -21,6 +21,4 @@ def reset_after_unmute_state() -> ChatMemberStateUpdate:
         banned_until=None,
         passed_poll=True,
         poll_attempts=0,
-        poll_question_order=None,
-        poll_question_index=0,
     )

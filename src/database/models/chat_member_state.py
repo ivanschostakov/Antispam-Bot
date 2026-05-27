@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
@@ -43,8 +43,6 @@ class ChatMemberState(Base):
     poll_id: Mapped[str | None] = mapped_column(String, nullable=True, default=None)
     poll_correct_option_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=None)
     poll_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, default=None)
-    poll_question_order: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
-    poll_question_index: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
 
     __table_args__ = (
         Index("ix_chat_member_states_user_id", "user_id"),

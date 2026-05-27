@@ -13,7 +13,6 @@ async def seed_default_poll_questions(db: AsyncSession) -> None:
             question=poll.text,
             correct_answer=poll.answer,
             wrong_answers=poll.others,
-            chat_id=None,
         )
 
 

@@ -19,12 +19,8 @@ from .moderated_chats import (
 from .polls import (
     count_default_poll_questions,
     create_poll_question,
-    delete_poll_question,
-    get_poll_question_by_id,
-    get_random_poll_for_chat,
-    list_chat_poll_questions,
+    get_random_default_poll_question,
     list_default_poll_questions,
-    list_effective_poll_questions_for_chat,
 )
 
 __all__ = [
@@ -46,10 +42,6 @@ __all__ = [
     "set_greetings_message",
     "count_default_poll_questions",
     "create_poll_question",
-    "delete_poll_question",
-    "get_poll_question_by_id",
-    "get_random_poll_for_chat",
-    "list_chat_poll_questions",
+    "get_random_default_poll_question",
     "list_default_poll_questions",
-    "list_effective_poll_questions_for_chat",
 ]

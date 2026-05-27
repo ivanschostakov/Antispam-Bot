@@ -30,8 +30,6 @@ class ChatMemberStateBase(BaseModel):
     poll_id: Optional[str] = None
     poll_correct_option_id: Optional[int] = None
     poll_started_at: Optional[datetime] = None
-    poll_question_order: Optional[str] = None
-    poll_question_index: int = 0
 
 
 class ChatMemberStateCreate(ChatMemberStateBase):
@@ -65,8 +63,6 @@ class ChatMemberStateUpdate(BaseModel):
     poll_id: Optional[str] = None
     poll_correct_option_id: Optional[int] = None
     poll_started_at: Optional[datetime] = None
-    poll_question_order: Optional[str] = None
-    poll_question_index: Optional[int] = None
 
 
 class ChatMemberStateOut(ChatMemberStateBase):
