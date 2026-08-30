@@ -204,7 +204,7 @@ y = df["y"].values
 print(f"Removed duplicates: {before_dedup - after_dedup}")
 print(f"Total unique samples: {len(texts)}, spam: {sum(y)}, ham: {len(y) - sum(y)}")
 
-# 80/20 split first, then split the 80 into 64/16 train/val
+# Split the dataset into 80% train, 10% validation, and 10% test.
 X_train_texts, X_temp_texts, y_train, y_temp = train_test_split(
     texts,
     y,

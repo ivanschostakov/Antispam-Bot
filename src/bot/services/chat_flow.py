@@ -25,7 +25,7 @@ from src.database.crud import (
 from src.database.schemas import ChatMemberStateUpdate
 from src.database.utils import extract_allowed_targets_from_text
 from src.helpers import CHAT_ADMIN_FILTER, append_message_stats_to_csv
-from src.test_classifier import predict_spam_proba
+from src.spam_classifier import predict_spam_proba
 
 
 async def on_bot_status_changed(event: ChatMemberUpdated):

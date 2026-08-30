@@ -33,11 +33,8 @@ print("Loading classifier artifact...")
 artifact = joblib.load(str(CLF_PATH))
 clf = artifact["classifier"]
 
-# Uses trained threshold by default
-threshold = float(artifact.get("threshold", 0.5)) #97.72
-
-# Optional manual override:
-threshold = 0.56 #97.99
+# Keep the runtime decision boundary configurable without editing source code.
+threshold = float(os.getenv("ANTISPAM_THRESHOLD", "0.56"))
 
 print(f"Using threshold: {threshold:.4f}")
 

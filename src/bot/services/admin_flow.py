@@ -26,7 +26,7 @@ from src.database.schemas import ChatMemberStateUpdate
 from src.database.utils import normalize_allowed_link
 from src.helpers import _notify_user
 from src.image import extract_text_from_image
-from src.test_classifier import predict_spam_proba, probability_to_label
+from src.spam_classifier import predict_spam_proba, probability_to_label
 
 
 def _message_plain_text(message: Message) -> str:
@@ -400,7 +400,6 @@ async def handle_private(message: Message):
         file = await message.bot.get_file(largest_photo.file_id)
         image_bytes = await message.bot.download_file(file.file_path)
         ocr_text = await asyncio.to_thread(extract_text_from_image, image_bytes)
-        print(ocr_text)
         if ocr_text and ocr_text.strip():
             text += "\n" + ocr_text.strip()
 

@@ -67,7 +67,6 @@ async def extract_message_text(message: Message) -> str:
         file = await message.bot.get_file(largest_photo.file_id)
         image_bytes = await message.bot.download_file(file.file_path)
         ocr_text = await asyncio.to_thread(extract_text_from_image, image_bytes)
-        print(ocr_text)
         if ocr_text and ocr_text.strip(): text_parts.append(ocr_text.strip())
     return "\n".join(text_parts).strip()
 
