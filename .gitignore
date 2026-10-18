@@ -25,3 +25,11 @@ src/model-backup/
 .idea/
 .vscode/
 .DS_Store
+
+# Local configuration templates and private runtime files
+!.env.*.example
+._*
+*.session
+*.session-*
+backups/
+backup/
